@@ -1,0 +1,14 @@
+[
+    {
+      "origin": ["https://trust-crowdsourced.herokuapp.com"],
+      "responseHeader": "*",
+      "method": ["GET"],
+      "maxAgeSeconds": 7200
+    },
+    {
+      "origin": ["http://localhost:3000"],
+      "responseHeader": "*",
+      "method": ["GET"],
+      "maxAgeSeconds": 7200
+    }
+]
