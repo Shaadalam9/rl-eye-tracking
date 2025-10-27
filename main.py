@@ -1,8 +1,6 @@
-import numpy as np
-import torch
-import os
-import pandas as pd
-import cv2
+def main():
+    print("Hello from rl-eye-tracking!")
 
 
-# Setting up the RL environment
+if __name__ == "__main__":
+    main()
