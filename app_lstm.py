@@ -1,29 +1,9 @@
-"""
-LSTM-based Gaze Tracking System with Reinforcement Learning - Complete Implementation.
-
-This module implements an end-to-end gaze prediction system using PPO (Proximal Policy Optimization)
-with an LSTM-enhanced neural network architecture. The system learns to predict human gaze patterns
-from video frames by imitating expert demonstrations through reinforcement learning.
-
-Key Features:
-    - Frame-based visual processing with CNN
-    - Temporal memory using LSTM
-    - Loss-aware state representation
-    - Exponential learning rate decay
-    - Configurable architecture and hyperparameters
-    - Comprehensive logging and visualization
-    - Checkpoint saving and resume capability
-
-Author: Sudhanshu Anand
-Date: 2025-10-27
-"""
-
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
 import cv2
 import os
-from typing import Dict, Tuple, Any, List, Optional
+from typing import Dict, Tuple, List, Optional, Callable
 import torch
 import torch.nn as nn
 from stable_baselines3 import PPO
@@ -166,7 +146,7 @@ class EnhancedGazeEnv(gym.Env):
         observation_space: Dict space containing frames, gaze history, loss history, etc.
     """
 
-    def __init__(self, video_folder: str, frame_stack: int = None, max_videos: int = None):
+    def __init__(self, video_folder: str, frame_stack: Optional[int] = None, max_videos: Optional[int] = None):
         """
         Initialize the gaze prediction environment.
 
@@ -486,7 +466,7 @@ class EnhancedGazeEnv(gym.Env):
         gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         return cv2.resize(gray_frame, self.target_size)
 
-    def reset(self, seed: int = None, options: dict = None) -> Tuple[Dict, dict]:
+    def reset(self, seed: Optional[int] = None, options: Optional[dict] = None) -> Tuple[Dict, dict]:
         """
         Reset environment to initial state.
 
@@ -512,7 +492,7 @@ class EnhancedGazeEnv(gym.Env):
 
         # Load initial frame stack
         for i in range(self.frame_stack):
-            ret, frame = self.cap.read()
+            ret, frame = self.cap.read()  # pyright: ignore[reportOptionalMemberAccess]
             if ret:
                 processed_frame = self._preprocess_frame(frame)
                 self.frame_buffer.append(processed_frame)
@@ -568,7 +548,7 @@ class EnhancedGazeEnv(gym.Env):
             Tuple of (observation, reward, terminated, truncated, info)
         """
         # Read next frame
-        ret, frame = self.cap.read()
+        ret, frame = self.cap.read()  # pyright: ignore[reportOptionalMemberAccess]
 
         # Check if video ended
         if not ret or self.current_frame_idx >= self.total_frames - 1:
@@ -650,7 +630,7 @@ class LSTMGazeCNN(BaseFeaturesExtractor):
         combined_net: Final fusion network
     """
 
-    def __init__(self, observation_space: gym.spaces.Dict, features_dim: int = None):
+    def __init__(self, observation_space: gym.spaces.Dict, features_dim: Optional[int] = None):
         """
         Initialize LSTM-CNN feature extractor.
 
@@ -791,7 +771,7 @@ class LSTMGazeCNN(BaseFeaturesExtractor):
         # Process through LSTM (detach hidden states to prevent backprop through time)
         lstm_out, (self.hidden_state, self.cell_state) = self.lstm(
             lstm_input,
-            (self.hidden_state.detach(), self.cell_state.detach())
+            (self.hidden_state.detach(), self.cell_state.detach())  # pyright: ignore[reportOptionalMemberAccess]
         )
 
         # Use last LSTM output as temporal features
@@ -811,7 +791,7 @@ class LSTMGazeCNN(BaseFeaturesExtractor):
         self.cell_state = None
 
 
-def exponential_schedule(initial_value: float) -> callable:
+def exponential_schedule(initial_value: float) -> Callable[[float], float]:
     """
     Create exponential decay learning rate schedule.
 
@@ -850,13 +830,8 @@ def exponential_schedule(initial_value: float) -> callable:
     return func
 
 
-def train_lstm_model(
-    video_folder: str,
-    total_timesteps: int = None,
-    verbose_lr: bool = None,
-    checkpoint_freq: int = None,
-    resume_path: Optional[str] = None
-) -> PPO:
+def train_lstm_model(video_folder: str, total_timesteps: Optional[int] = None, verbose_lr: Optional[bool] = None,
+                     checkpoint_freq: Optional[int] = None, resume_path: Optional[str] = None) -> PPO:
     """
     Train LSTM-based gaze prediction model using PPO.
 
@@ -904,7 +879,7 @@ def train_lstm_model(
     initial_lr = config.learning_rate.initial_lr
     lr_schedule = exponential_schedule(initial_lr)
 
-    print(f"Learning Rate Schedule: Exponential Decay")
+    print("Learning Rate Schedule: Exponential Decay")
     print(f"  Initial LR: {initial_lr:.2e}")
     print(f"  Decay rate: {config.learning_rate.exponential_decay_rate}")
     print(f"  Min LR: {initial_lr * config.learning_rate.exponential_min_lr_factor:.2e}")
@@ -1018,7 +993,7 @@ def plot_training_curve(data: List[float], title: str, save_path: str):
         window = min(50, len(data) // 10)
         moving_avg = np.convolve(data, np.ones(window)/window, mode='valid')
         plt.plot(range(window-1, len(data)), moving_avg,
-                linewidth=2, label=f'Moving Avg (window={window})')
+                 linewidth=2, label=f'Moving Avg (window={window})')
         plt.legend()
 
     plt.xlabel('Episode')
@@ -1030,7 +1005,7 @@ def plot_training_curve(data: List[float], title: str, save_path: str):
     print(f"Training curve saved to {save_path}")
 
 
-def test_lstm_model(video_folder: str, model_path: str = None, visualize: bool = True):
+def test_lstm_model(video_folder: str, model_path: Optional[str] = None, visualize: bool = True):
     """
     Test trained LSTM model on video sequences.
 
@@ -1160,11 +1135,11 @@ def test_lstm_model(video_folder: str, model_path: str = None, visualize: bool =
 
                 # Add text overlay
                 cv2.putText(vis_frame, f"Frame: {frame_idx}", (10, 30),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
                 cv2.putText(vis_frame, f"Gaze: ({action[0]:.3f}, {action[1]:.3f})", (10, 60),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
                 cv2.putText(vis_frame, f"Mode: {'Deterministic' if deterministic else 'Stochastic'}",
-                           (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                            (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
 
                 video_writer.write(vis_frame)
 
@@ -1207,11 +1182,11 @@ def test_lstm_model(video_folder: str, model_path: str = None, visualize: bool =
         all_predictions.append(predictions)
         all_statistics.append(stats)
 
-        print(f"\n  Prediction Statistics:")
-        print(f"    Mean:     X={stats['mean_x']:.3f}, Y={stats['mean_y']:.3f}")
-        print(f"    Std Dev:  X={stats['std_x']:.3f}, Y={stats['std_y']:.3f}")
-        print(f"    Range X:  [{stats['min_x']:.3f}, {stats['max_x']:.3f}]")
-        print(f"    Range Y:  [{stats['min_y']:.3f}, {stats['max_y']:.3f}]")
+        print("\n  Prediction Statistics:")
+        print(f"Mean:     X={stats['mean_x']:.3f}, Y={stats['mean_y']:.3f}")
+        print(f"Std Dev:  X={stats['std_x']:.3f}, Y={stats['std_y']:.3f}")
+        print(f"Range X:  [{stats['min_x']:.3f}, {stats['max_x']:.3f}]")
+        print(f"Range Y:  [{stats['min_y']:.3f}, {stats['max_y']:.3f}]")
 
         # Calculate movement statistics
         movements = np.linalg.norm(predictions[1:] - predictions[:-1], axis=1)
@@ -1220,19 +1195,19 @@ def test_lstm_model(video_folder: str, model_path: str = None, visualize: bool =
 
         # Assess model quality
         is_centered = (test_cfg.centered_min <= stats['mean_x'] <= test_cfg.centered_max and
-                      test_cfg.centered_min <= stats['mean_y'] <= test_cfg.centered_max)
+                       test_cfg.centered_min <= stats['mean_y'] <= test_cfg.centered_max)
         has_variation = predictions.std() > test_cfg.variation_threshold
         has_movement = movements.mean() > test_cfg.movement_threshold
         avoids_edges = (stats['min_x'] > test_cfg.edge_avoid_min and
-                       stats['max_x'] < test_cfg.edge_avoid_max)
+                        stats['max_x'] < test_cfg.edge_avoid_max)
 
         print("\n  Assessment:")
         if is_centered and has_variation and has_movement and avoids_edges:
-            print("    ✅ Model shows varied, memory-aware gaze patterns!")
+            print("✅ Model shows varied, memory-aware gaze patterns!")
         elif has_variation and has_movement:
-            print("    ⚠️  Model shows movement but may need refinement")
+            print("⚠️  Model shows movement but may need refinement")
         else:
-            print("    ❌ Model needs more training")
+            print("❌ Model needs more training")
 
     # Create summary plot
     if len(all_predictions) > 0:
@@ -1323,17 +1298,17 @@ def main():
 
     parser = argparse.ArgumentParser(description='LSTM Gaze Tracking System')
     parser.add_argument('--mode', type=str, choices=['train', 'test', 'both'],
-                       default='both', help='Operation mode')
+                        default='both', help='Operation mode')
     parser.add_argument('--video-folder', type=str, default=None,
-                       help='Path to video folder (overrides config)')
+                        help='Path to video folder (overrides config)')
     parser.add_argument('--model-path', type=str, default=None,
-                       help='Path to model for testing/resuming')
+                        help='Path to model for testing/resuming')
     parser.add_argument('--timesteps', type=int, default=None,
-                       help='Total training timesteps')
+                        help='Total training timesteps')
     parser.add_argument('--resume', action='store_true',
-                       help='Resume training from checkpoint')
+                        help='Resume training from checkpoint')
     parser.add_argument('--no-visualize', action='store_true',
-                       help='Disable visualization during testing')
+                        help='Disable visualization during testing')
 
     args = parser.parse_args()
 

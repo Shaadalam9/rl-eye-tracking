@@ -3,7 +3,7 @@ from gymnasium import spaces
 import numpy as np
 import cv2
 import os
-from typing import Dict, Tuple, Any, List
+from typing import Dict, Tuple, List, Optional
 import torch
 import torch.nn as nn
 from stable_baselines3 import PPO
@@ -12,6 +12,9 @@ from stable_baselines3.common.vec_env import DummyVecEnv
 import glob
 from collections import deque
 import random
+from custom_logger import CustomLogger
+
+logger = CustomLogger(__name__)  # use custom logger
 
 
 class ImprovedGazeEnv(gym.Env):
@@ -23,7 +26,7 @@ class ImprovedGazeEnv(gym.Env):
         super(ImprovedGazeEnv, self).__init__()
 
         self.video_files = sorted(glob.glob(os.path.join(video_folder, "*.mp4")))[:max_videos]
-        print(f"Loaded {len(self.video_files)} videos for training")
+        logger.info(f"Loaded {len(self.video_files)} videos for training")
 
         self.frame_stack = frame_stack
         self.target_size = (84, 84)
@@ -163,7 +166,7 @@ class ImprovedGazeEnv(gym.Env):
         else:
             self.width, self.height = 1920, 1080
 
-        print(f"Processing: {os.path.basename(video_path)} - {self.total_frames} frames")
+        logger.info(f"Processing: {os.path.basename(video_path)} - {self.total_frames} frames")
 
         self.frame_buffer = deque(maxlen=self.frame_stack)
         self.gaze_history = deque(maxlen=self.frame_stack)
@@ -176,7 +179,7 @@ class ImprovedGazeEnv(gym.Env):
         gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         return cv2.resize(gray_frame, self.target_size)
 
-    def reset(self, seed: int = None, options: dict = None) -> Tuple[Dict, dict]:
+    def reset(self, seed: Optional[int] = None, options: Optional[dict] = None) -> Tuple[Dict, dict]:
         """Reset environment"""
         super().reset(seed=seed)
         self._load_current_video()
@@ -263,7 +266,7 @@ class ImprovedCNN(BaseFeaturesExtractor):
         super(ImprovedCNN, self).__init__(observation_space, features_dim)
 
         # Enhanced CNN for frames
-        n_input_channels = observation_space['frames'].shape[0]
+        n_input_channels = observation_space['frames'].shape[0]  # pyright: ignore[reportOptionalSubscript]
 
         self.cnn = nn.Sequential(
             nn.Conv2d(n_input_channels, 32, kernel_size=8, stride=4),
@@ -285,7 +288,7 @@ class ImprovedCNN(BaseFeaturesExtractor):
 
         # Enhanced gaze history processing
         self.gaze_net = nn.Sequential(
-            nn.Linear(observation_space['gaze_history'].shape[0] * 2, 128),
+            nn.Linear(observation_space['gaze_history'].shape[0] * 2, 128),  # pyright: ignore[reportOptionalSubscript]
             nn.ReLU(),
             nn.Linear(128, 64),
             nn.ReLU(),
@@ -320,7 +323,7 @@ class ImprovedCNN(BaseFeaturesExtractor):
 
 def train_improved_model(video_folder: str, total_timesteps: int = 50000):
     """Train improved model with better settings"""
-    print("Training Improved Model...")
+    logger.info("Training Improved Model...")
 
     # Create environment
     env = DummyVecEnv([lambda: ImprovedGazeEnv(video_folder, max_videos=5)])
@@ -348,10 +351,10 @@ def train_improved_model(video_folder: str, total_timesteps: int = 50000):
         device='cuda' if torch.cuda.is_available() else 'cpu'
     )
 
-    print("Training improved model...")
+    logger.info("Training improved model...")
     model.learn(total_timesteps=total_timesteps)
     model.save("improved_gaze_model")
-    print("Improved model saved!")
+    logger.info("Improved model saved!")
 
     env.close()
     return model
@@ -359,19 +362,19 @@ def train_improved_model(video_folder: str, total_timesteps: int = 50000):
 
 def test_improved_model(video_folder: str, model_path: str = "improved_gaze_model"):
     """Test the improved model"""
-    print("Testing Improved Model...")
+    logger.info("Testing Improved Model...")
 
     try:
         model = PPO.load(model_path)
-        print(f"Model loaded: {model_path}")
+        logger.info(f"Model loaded: {model_path}")
     except Exception as e:
-        print(f"Error loading model: {e}")
+        logger.error(f"Error loading model: {e}")
         return
 
     video_files = sorted(glob.glob(os.path.join(video_folder, "*.mp4")))[:2]
 
     for video_path in video_files:
-        print(f"\nTesting on: {os.path.basename(video_path)}")
+        logger.info(f"\nTesting on: {os.path.basename(video_path)}")
 
         cap = cv2.VideoCapture(video_path)
         frame_buffer = deque(maxlen=4)
@@ -420,35 +423,35 @@ def test_improved_model(video_folder: str, model_path: str = "improved_gaze_mode
 
         # Analyze predictions
         predictions = np.array(predictions)
-        print(f"Prediction Statistics:")
-        print(f"  Mean: ({predictions[:, 0].mean():.3f}, {predictions[:, 1].mean():.3f})")
-        print(f"  Std:  ({predictions[:, 0].std():.3f}, {predictions[:, 1].std():.3f})")
-        print(f"  Range X: [{predictions[:, 0].min():.3f}, {predictions[:, 0].max():.3f}]")
-        print(f"  Range Y: [{predictions[:, 1].min():.3f}, {predictions[:, 1].max():.3f}]")
+        logger.info("Prediction Statistics:")
+        logger.info(f"Mean: ({predictions[:, 0].mean():.3f}, {predictions[:, 1].mean():.3f})")
+        logger.info(f"Std: ({predictions[:, 0].std():.3f}, {predictions[:, 1].std():.3f})")
+        logger.info(f"Range X: [{predictions[:, 0].min():.3f}, {predictions[:, 0].max():.3f}]")
+        logger.info(f"Range Y: [{predictions[:, 1].min():.3f}, {predictions[:, 1].max():.3f}]")
 
         # Movement analysis
         movements = np.linalg.norm(predictions[1:] - predictions[:-1], axis=1)
-        print(f"  Movement stats - Mean: {movements.mean():.4f}, Std: {movements.std():.4f}")
-        print(f"  Max movement: {movements.max():.4f}, Min movement: {movements.min():.4f}")
+        logger.info(f"Movement stats - Mean: {movements.mean():.4f}, Std: {movements.std():.4f}")
+        logger.info(f"Max movement: {movements.max():.4f}, Min movement: {movements.min():.4f}")
 
         # Assessment
         if predictions.std() < 0.01:
-            print("  ❌ Model is predicting constant values")
+            logger.debug("❌ Model is predicting constant values")
         elif movements.mean() < 0.01:
-            print("  ⚠️  Model has very little movement")
+            logger.debug("⚠️  Model has very little movement")
         else:
-            print("  ✅ Model shows varied gaze patterns!")
+            logger.debug(" ✅ Model shows varied gaze patterns!")
 
 
 if __name__ == "__main__":
     video_folder = r"C:\Users\sudha\PycharmProjects\RL Project 1\stimuli"
 
-    print("Improved Gaze Tracking Training")
-    print("=" * 50)
+    logger.info("Improved Gaze Tracking Training")
+    logger.info("=" * 50)
 
     # Train the improved model
     model = train_improved_model(video_folder, total_timesteps=50000)
 
     # Test it
-    print("\n" + "=" * 50)
+    logger.info("\n" + "=" * 50)
     test_improved_model(video_folder, "improved_gaze_model")
