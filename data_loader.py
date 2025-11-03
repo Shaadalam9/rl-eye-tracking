@@ -14,6 +14,12 @@ from typing import Dict, List, Tuple, Optional
 import numpy as np
 from collections import defaultdict
 import yaml
+from custom_logger import CustomLogger           # structured logging
+from logmod import logs
+import common
+
+logs(show_level=common.get_configs("logger_level"), show_color=True)
+logger = CustomLogger(__name__)
 
 
 class WebGazerDataLoader:
@@ -47,10 +53,10 @@ class WebGazerDataLoader:
         # Data quality thresholds
         self.min_gaze_points = config['split']['min_gaze_points']
 
-        print(f"Initialized WebGazerDataLoader")
-        print(f"  JSON folder: {json_folder}")
-        print(f"  Video folder: {video_folder}")
-        print(f"  Screen size: {self.screen_width}x{self.screen_height}")
+        logger.info("Initialized WebGazerDataLoader")
+        logger.info(f"JSON folder: {json_folder}")
+        logger.info(f"Video folder: {video_folder}")
+        logger.info(f"Screen size: {self.screen_width}x{self.screen_height}")
 
     def load_json_files(self) -> List[str]:
         """Loads list of JSON files in the folder.
@@ -64,7 +70,7 @@ class WebGazerDataLoader:
                 json_files.append(os.path.join(self.json_folder, filename))
 
         json_files.sort()
-        print(f"Found {len(json_files)} JSON files: {[os.path.basename(f) for f in json_files]}")
+        logger.info(f"Found {len(json_files)} JSON files: {[os.path.basename(f) for f in json_files]}")
         return json_files
 
     def extract_video_name(self, trial_data: Dict) -> Optional[str]:
@@ -157,7 +163,7 @@ class WebGazerDataLoader:
         Returns:
             Dictionary mapping video_name -> list of (x, y, t) tuples.
         """
-        print(f"\nProcessing: {os.path.basename(json_path)}")
+        logger.info(f"\nProcessing: {os.path.basename(json_path)}")
 
         video_gaze_map = defaultdict(list)
 
@@ -210,16 +216,16 @@ class WebGazerDataLoader:
                                 gaze_points_found += len(gazes)
 
                     except json.JSONDecodeError as e:
-                        print(f"  ⚠️  Session {line_num}: JSON decode error - {e}")
+                        logger.error(f"⚠️  Session {line_num}: JSON decode error - {e}")
                         continue
                     except Exception as e:
-                        print(f"  ⚠️  Session {line_num}: Error - {e}")
+                        logger.error(f"⚠️  Session {line_num}: Error - {e}")
                         continue
 
-            print(f"  Read {total_sessions} sessions ({valid_sessions} valid)")
-            print(f"  Processed {total_trials} trials ({video_trials} video trials)")
-            print(f"  ✓ Extracted gaze data for {len(video_gaze_map)} unique videos")
-            print(f"  ✓ Total gaze points: {gaze_points_found}")
+            logger.info(f"Read {total_sessions} sessions ({valid_sessions} valid)")
+            logger.info(f"Processed {total_trials} trials ({video_trials} video trials)")
+            logger.info(f"✓ Extracted gaze data for {len(video_gaze_map)} unique videos")
+            logger.info(f"✓ Total gaze points: {gaze_points_found}")
 
             # Filter videos with too few points
             filtered_map = {
@@ -229,12 +235,12 @@ class WebGazerDataLoader:
 
             if len(filtered_map) < len(video_gaze_map):
                 removed = len(video_gaze_map) - len(filtered_map)
-                print(f"  ℹ️  Filtered out {removed} videos with < {self.min_gaze_points} gaze points")
+                logger.info(f"ℹ️  Filtered out {removed} videos with < {self.min_gaze_points} gaze points")
 
             return dict(filtered_map)
 
         except Exception as e:
-            print(f"  ❌ Error processing {json_path}: {e}")
+            logger.info(f"❌ Error processing {json_path}: {e}")
             import traceback
             traceback.print_exc()
             return {}
@@ -245,9 +251,9 @@ class WebGazerDataLoader:
         Returns:
             Dictionary mapping video_name -> list of (x, y, t) tuples.
         """
-        print("\n" + "=" * 80)
-        print("LOADING WEBGAZER DATA")
-        print("=" * 80)
+        logger.info("\n" + "=" * 80)
+        logger.info("LOADING WEBGAZER DATA")
+        logger.info("=" * 80)
 
         json_files = self.load_json_files()
 
@@ -271,15 +277,15 @@ class WebGazerDataLoader:
         for video_name in all_mappings:
             all_mappings[video_name].sort(key=lambda x: x[2])  # Sort by timestamp
 
-        print("\n" + "=" * 80)
-        print("SUMMARY")
-        print("=" * 80)
-        print(f"Total unique videos: {len(all_mappings)}")
+        logger.info("\n" + "=" * 80)
+        logger.info("SUMMARY")
+        logger.info("=" * 80)
+        logger.info(f"Total unique videos: {len(all_mappings)}")
 
         for video_name, gazes in sorted(all_mappings.items()):
-            print(f"  {video_name}: {len(gazes)} gaze points")
+            logger.info(f"  {video_name}: {len(gazes)} gaze points")
 
-        print("=" * 80 + "\n")
+        logger.info("=" * 80 + "\n")
 
         return all_mappings
 
@@ -292,9 +298,9 @@ class WebGazerDataLoader:
         Returns:
             Tuple of (available_videos, missing_videos).
         """
-        print("\n" + "=" * 80)
-        print("VERIFYING VIDEO FILES")
-        print("=" * 80 + "\n")
+        logger.info("\n" + "=" * 80)
+        logger.info("VERIFYING VIDEO FILES")
+        logger.info("=" * 80 + "\n")
 
         available = []
         missing = []
@@ -304,17 +310,17 @@ class WebGazerDataLoader:
 
             if os.path.exists(video_path):
                 available.append(video_name)
-                print(f"  ✓ {video_name}")
+                logger.info(f"✓ {video_name}")
             else:
                 missing.append(video_name)
-                print(f"  ✗ {video_name} (not found)")
+                logger.info(f"✗ {video_name} (not found)")
 
-        print(f"\n{'=' * 80}")
-        print(f"Available: {len(available)}/{len(video_gaze_map)}")
+        logger.info(f"\n{'=' * 80}")
+        logger.info(f"Available: {len(available)}/{len(video_gaze_map)}")
         if missing:
-            print(f"Missing: {len(missing)} videos")
-            print("  " + ", ".join(missing))
-        print("=" * 80 + "\n")
+            logger.info(f"Missing: {len(missing)} videos")
+            logger.info("  " + ", ".join(missing))
+        logger.info("=" * 80 + "\n")
 
         return available, missing
 
@@ -350,9 +356,9 @@ class WebGazerDataLoader:
         Returns:
             Tuple of (train_videos, test_videos).
         """
-        print("\n" + "=" * 80)
-        print("SPLITTING TRAIN/TEST SETS")
-        print("=" * 80 + "\n")
+        logger.info("\n" + "=" * 80)
+        logger.info("SPLITTING TRAIN/TEST SETS")
+        logger.info("=" * 80 + "\n")
 
         # Set random seed
         np.random.seed(self.config['split']['random_seed'])
@@ -368,22 +374,22 @@ class WebGazerDataLoader:
         test_videos = shuffled[:n_test]
         train_videos = shuffled[n_test:]
 
-        print(f"Total videos: {len(available_videos)}")
-        print(f"Train: {len(train_videos)} ({100 * (1 - test_ratio):.1f}%)")
-        print(f"Test: {len(test_videos)} ({100 * test_ratio:.1f}%)")
-        print(f"Random seed: {self.config['split']['random_seed']}")
+        logger.info(f"Total videos: {len(available_videos)}")
+        logger.info(f"Train: {len(train_videos)} ({100 * (1 - test_ratio):.1f}%)")
+        logger.info(f"Test: {len(test_videos)} ({100 * test_ratio:.1f}%)")
+        logger.info(f"Random seed: {self.config['split']['random_seed']}")
 
-        print(f"\nTraining videos:")
+        logger.info("\nTraining videos:")
         for v in train_videos:
             n_gazes = len(video_gaze_map[v])
-            print(f"  - {v} ({n_gazes} gaze points)")
+            logger.info(f"  - {v} ({n_gazes} gaze points)")
 
-        print(f"\nTesting videos:")
+        logger.info("\nTesting videos:")
         for v in test_videos:
             n_gazes = len(video_gaze_map[v])
-            print(f"  - {v} ({n_gazes} gaze points)")
+            logger.info(f"  - {v} ({n_gazes} gaze points)")
 
-        print("\n" + "=" * 80 + "\n")
+        logger.info("\n" + "=" * 80 + "\n")
 
         return train_videos, test_videos
 
@@ -420,7 +426,7 @@ class WebGazerDataLoader:
         with open(output_path, 'w') as f:
             yaml.dump(split_info, f, default_flow_style=False)
 
-        print(f"✓ Split saved to: {output_path}")
+        logger.info(f"✓ Split saved to: {output_path}")
 
 
 def load_config(config_path: str = "config.yaml") -> Dict:
@@ -435,7 +441,7 @@ def load_config(config_path: str = "config.yaml") -> Dict:
     with open(config_path, 'r') as f:
         config = yaml.safe_load(f)
 
-    print("Configuration loaded successfully")
+    logger.info("Configuration loaded successfully")
     return config
 
 
@@ -455,14 +461,14 @@ def main():
     video_gaze_map = loader.load_all_mappings()
 
     if len(video_gaze_map) == 0:
-        print("❌ No video-gaze mappings found! Check your JSON files.")
+        logger.info("❌ No video-gaze mappings found! Check your JSON files.")
         return
 
     # Verify video files
     available_videos, missing_videos = loader.verify_video_files(video_gaze_map)
 
     if len(available_videos) == 0:
-        print("❌ No videos found! Check your video folder path.")
+        logger.info("❌ No videos found! Check your video folder path.")
         return
 
     # Split train/test
@@ -472,28 +478,28 @@ def main():
     loader.save_split(train_videos, test_videos, video_gaze_map)
 
     # Show sample data
-    print("\n" + "=" * 80)
-    print("SAMPLE GAZE DATA")
-    print("=" * 80)
+    logger.info("\n" + "=" * 80)
+    logger.info("SAMPLE GAZE DATA")
+    logger.info("=" * 80)
 
     sample_video = train_videos[0]
     sample_gazes = loader.get_gaze_for_video(sample_video, video_gaze_map)
 
-    print(f"\nVideo: {sample_video}")
-    print(f"Total gaze points: {len(sample_gazes)}")
-    print(f"\nFirst 5 gaze coordinates (normalized):")
+    logger.info(f"\nVideo: {sample_video}")
+    logger.info(f"Total gaze points: {len(sample_gazes)}")
+    logger.info("\nFirst 5 gaze coordinates (normalized):")
     for i, (x, y) in enumerate(sample_gazes[:5]):
-        print(f"  {i}: x={x:.4f}, y={y:.4f}")
+        logger.info(f"{i}: x={x:.4f}, y={y:.4f}")
 
-    print(f"\nGaze statistics:")
-    print(f"  X range: [{sample_gazes[:, 0].min():.4f}, {sample_gazes[:, 0].max():.4f}]")
-    print(f"  Y range: [{sample_gazes[:, 1].min():.4f}, {sample_gazes[:, 1].max():.4f}]")
-    print(f"  X mean: {sample_gazes[:, 0].mean():.4f} ± {sample_gazes[:, 0].std():.4f}")
-    print(f"  Y mean: {sample_gazes[:, 1].mean():.4f} ± {sample_gazes[:, 1].std():.4f}")
+    logger.info("\nGaze statistics:")
+    logger.info(f"X range: [{sample_gazes[:, 0].min():.4f}, {sample_gazes[:, 0].max():.4f}]")
+    logger.info(f"Y range: [{sample_gazes[:, 1].min():.4f}, {sample_gazes[:, 1].max():.4f}]")
+    logger.info(f"X mean: {sample_gazes[:, 0].mean():.4f} ± {sample_gazes[:, 0].std():.4f}")
+    logger.info(f"Y mean: {sample_gazes[:, 1].mean():.4f} ± {sample_gazes[:, 1].std():.4f}")
 
-    print("\n" + "=" * 80)
-    print("✓ Data loader test completed successfully!")
-    print("=" * 80 + "\n")
+    logger.info("\n" + "=" * 80)
+    logger.info("✓ Data loader test completed successfully!")
+    logger.info("=" * 80 + "\n")
 
 
 if __name__ == "__main__":

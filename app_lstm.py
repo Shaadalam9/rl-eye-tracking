@@ -23,7 +23,7 @@ from gymnasium import spaces
 import numpy as np
 import cv2
 import os
-from typing import Dict, Tuple, Any, List, Optional
+from typing import Dict, Tuple, List, Optional
 import torch
 import torch.nn as nn
 from stable_baselines3 import PPO
@@ -34,11 +34,16 @@ import glob
 from collections import deque
 import random
 import matplotlib.pyplot as plt
-from datetime import datetime
 import json
+from custom_logger import CustomLogger           # structured logging
+from logmod import logs
+import common
 
 # Import configuration
 from config import config
+
+logs(show_level=common.get_configs("logger_level"), show_color=True)
+logger = CustomLogger(__name__)
 
 
 class LearningRateLogger(BaseCallback):
@@ -89,7 +94,7 @@ class LearningRateLogger(BaseCallback):
             self.lr_history.append(lr_value)
             self.step_history.append(self.num_timesteps)
 
-            print(f"Step {self.num_timesteps}: LR = {lr_value:.6e}")
+            logger.info(f"Step {self.num_timesteps}: LR = {lr_value:.6e}")
 
         return True
 
@@ -105,7 +110,7 @@ class LearningRateLogger(BaseCallback):
             plt.yscale('log')
             plt.savefig(save_path, dpi=300, bbox_inches='tight')
             plt.close()
-            print(f"Learning rate curve saved to {save_path}")
+            logger.info(f"Learning rate curve saved to {save_path}")
 
 
 class MetricsLogger(BaseCallback):
@@ -130,7 +135,7 @@ class MetricsLogger(BaseCallback):
 
                     if self.episode_count % 10 == 0:
                         mean_reward = np.mean(self.episode_rewards[-10:])
-                        print(f"Episode {self.episode_count}: Mean Reward (last 10) = {mean_reward:.2f}")
+                        logger.info(f"Episode {self.episode_count}: Mean Reward (last 10) = {mean_reward:.2f}")
 
         return True
 
@@ -144,7 +149,7 @@ class MetricsLogger(BaseCallback):
 
         with open(save_path, 'w') as f:
             json.dump(metrics, f, indent=2)
-        print(f"Training metrics saved to {save_path}")
+        logger.info(f"Training metrics saved to {save_path}")
 
 
 class EnhancedGazeEnv(gym.Env):
@@ -188,7 +193,7 @@ class EnhancedGazeEnv(gym.Env):
         if len(self.video_files) == 0:
             raise ValueError(f"No video files found in {video_folder}")
 
-        print(f"Loaded {len(self.video_files)} videos for training")
+        logger.info(f"Loaded {len(self.video_files)} videos for training")
 
         # Define action space - continuous gaze coordinates normalized to [0, 1]
         self.action_space = spaces.Box(
@@ -457,7 +462,7 @@ class EnhancedGazeEnv(gym.Env):
             # Default dimensions if frame read fails
             self.width, self.height = 1920, 1080
 
-        print(f"Processing: {os.path.basename(video_path)} - {self.total_frames} frames")
+        logger.info(f"Processing: {os.path.basename(video_path)} - {self.total_frames} frames")
 
         # Initialize temporal buffers with maximum length
         self.frame_buffer = deque(maxlen=self.frame_stack)
@@ -850,13 +855,8 @@ def exponential_schedule(initial_value: float) -> callable:
     return func
 
 
-def train_lstm_model(
-    video_folder: str,
-    total_timesteps: int = None,
-    verbose_lr: bool = None,
-    checkpoint_freq: int = None,
-    resume_path: Optional[str] = None
-) -> PPO:
+def train_lstm_model(video_folder: str, total_timesteps: int = None, verbose_lr: bool = None,
+                     checkpoint_freq: int = None, resume_path: Optional[str] = None) -> PPO:
     """
     Train LSTM-based gaze prediction model using PPO.
 
@@ -877,8 +877,8 @@ def train_lstm_model(
     Returns:
         Trained PPO model
     """
-    print("Training LSTM-based Gaze Model with Exponential LR Decay...")
-    print("=" * 80)
+    logger.info("Training LSTM-based Gaze Model with Exponential LR Decay...")
+    logger.info("=" * 80)
 
     # Load configuration
     total_timesteps = total_timesteps or config.training.total_timesteps
@@ -904,24 +904,23 @@ def train_lstm_model(
     initial_lr = config.learning_rate.initial_lr
     lr_schedule = exponential_schedule(initial_lr)
 
-    print(f"Learning Rate Schedule: Exponential Decay")
-    print(f"  Initial LR: {initial_lr:.2e}")
-    print(f"  Decay rate: {config.learning_rate.exponential_decay_rate}")
-    print(f"  Min LR: {initial_lr * config.learning_rate.exponential_min_lr_factor:.2e}")
-    print()
+    logger.info("Learning Rate Schedule: Exponential Decay")
+    logger.info(f"Initial LR: {initial_lr:.2e}")
+    logger.info(f"  Decay rate: {config.learning_rate.exponential_decay_rate}")
+    logger.info(f"  Min LR: {initial_lr * config.learning_rate.exponential_min_lr_factor:.2e}")
 
     # Create or load PPO model
     train_cfg = config.training
     device = train_cfg.device if torch.cuda.is_available() else 'cpu'
 
     if resume_path and os.path.exists(resume_path):
-        print(f"Resuming training from: {resume_path}")
+        logger.info(f"Resuming training from: {resume_path}")
         model = PPO.load(
             resume_path,
             env=env,
             device=device
         )
-        print("Model loaded successfully!")
+        logger.info("Model loaded successfully!")
     else:
         model = PPO(
             "MultiInputPolicy",
@@ -962,10 +961,10 @@ def train_lstm_model(
     callbacks.append(checkpoint_callback)
 
     # Train model
-    print(f"Training for {total_timesteps:,} timesteps...")
-    print(f"Device: {model.device}")
-    print(f"Checkpoints will be saved every {checkpoint_freq:,} steps")
-    print("=" * 80 + "\n")
+    logger.info(f"Training for {total_timesteps:,} timesteps...")
+    logger.info(f"Device: {model.device}")
+    logger.info(f"Checkpoints will be saved every {checkpoint_freq:,} steps")
+    logger.info("=" * 80 + "\n")
 
     try:
         model.learn(
@@ -975,7 +974,7 @@ def train_lstm_model(
 
         # Save final model
         model.save(train_cfg.model_save_path)
-        print(f"\n✓ Model saved to: {train_cfg.model_save_path}")
+        logger.info(f"\n✓ Model saved to: {train_cfg.model_save_path}")
 
         # Save metrics and plots
         if verbose_lr:
@@ -992,10 +991,10 @@ def train_lstm_model(
             )
 
     except KeyboardInterrupt:
-        print("\n\nTraining interrupted by user!")
-        print("Saving current model state...")
+        logger.info("\n\nTraining interrupted by user!")
+        logger.info("Saving current model state...")
         model.save(f"{train_cfg.model_save_path}_interrupted")
-        print(f"Model saved to: {train_cfg.model_save_path}_interrupted")
+        logger.info(f"Model saved to: {train_cfg.model_save_path}_interrupted")
 
     env.close()
     return model
@@ -1018,7 +1017,7 @@ def plot_training_curve(data: List[float], title: str, save_path: str):
         window = min(50, len(data) // 10)
         moving_avg = np.convolve(data, np.ones(window)/window, mode='valid')
         plt.plot(range(window-1, len(data)), moving_avg,
-                linewidth=2, label=f'Moving Avg (window={window})')
+                 linewidth=2, label=f'Moving Avg (window={window})')
         plt.legend()
 
     plt.xlabel('Episode')
@@ -1027,7 +1026,7 @@ def plot_training_curve(data: List[float], title: str, save_path: str):
     plt.grid(True, alpha=0.3)
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     plt.close()
-    print(f"Training curve saved to {save_path}")
+    logger.info(f"Training curve saved to {save_path}")
 
 
 def test_lstm_model(video_folder: str, model_path: str = None, visualize: bool = True):
@@ -1039,9 +1038,9 @@ def test_lstm_model(video_folder: str, model_path: str = None, visualize: bool =
         model_path: Path to saved model (uses config if None)
         visualize: Whether to create visualization video
     """
-    print("\n" + "=" * 80)
-    print("TESTING LSTM MODEL")
-    print("=" * 80)
+    logger.info("\n" + "=" * 80)
+    logger.info("TESTING LSTM MODEL")
+    logger.info("=" * 80)
 
     # Load configuration
     test_cfg = config.testing
@@ -1050,9 +1049,9 @@ def test_lstm_model(video_folder: str, model_path: str = None, visualize: bool =
     # Load trained model
     try:
         model = PPO.load(model_path)
-        print(f"✓ Model loaded: {model_path}\n")
+        logger.info(f"✓ Model loaded: {model_path}\n")
     except Exception as e:
-        print(f"✗ Error loading model: {e}")
+        logger.error(f"✗ Error loading model: {e}")
         return
 
     # Get test videos
@@ -1064,8 +1063,8 @@ def test_lstm_model(video_folder: str, model_path: str = None, visualize: bool =
 
     # Test on each video
     for video_idx, video_path in enumerate(video_files):
-        print(f"\nTesting on: {os.path.basename(video_path)}")
-        print("-" * 80)
+        logger.info(f"\nTesting on: {os.path.basename(video_path)}")
+        logger.info("-" * 80)
 
         # Initialize video capture
         cap = cv2.VideoCapture(video_path)
@@ -1160,11 +1159,11 @@ def test_lstm_model(video_folder: str, model_path: str = None, visualize: bool =
 
                 # Add text overlay
                 cv2.putText(vis_frame, f"Frame: {frame_idx}", (10, 30),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
                 cv2.putText(vis_frame, f"Gaze: ({action[0]:.3f}, {action[1]:.3f})", (10, 60),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
                 cv2.putText(vis_frame, f"Mode: {'Deterministic' if deterministic else 'Stochastic'}",
-                           (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                            (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
 
                 video_writer.write(vis_frame)
 
@@ -1188,7 +1187,7 @@ def test_lstm_model(video_folder: str, model_path: str = None, visualize: bool =
         cap.release()
         if video_writer:
             video_writer.release()
-            print(f"  Visualization saved to: {output_path}")
+            logger.info(f"Visualization saved to: {output_path}")
 
         # Analyze predictions
         predictions = np.array(predictions)
@@ -1207,40 +1206,40 @@ def test_lstm_model(video_folder: str, model_path: str = None, visualize: bool =
         all_predictions.append(predictions)
         all_statistics.append(stats)
 
-        print(f"\n  Prediction Statistics:")
-        print(f"    Mean:     X={stats['mean_x']:.3f}, Y={stats['mean_y']:.3f}")
-        print(f"    Std Dev:  X={stats['std_x']:.3f}, Y={stats['std_y']:.3f}")
-        print(f"    Range X:  [{stats['min_x']:.3f}, {stats['max_x']:.3f}]")
-        print(f"    Range Y:  [{stats['min_y']:.3f}, {stats['max_y']:.3f}]")
+        logger.info("\n  Prediction Statistics:")
+        logger.info(f"Mean: X={stats['mean_x']:.3f}, Y={stats['mean_y']:.3f}")
+        logger.info(f"Std Dev: X={stats['std_x']:.3f}, Y={stats['std_y']:.3f}")
+        logger.info(f"Range X: [{stats['min_x']:.3f}, {stats['max_x']:.3f}]")
+        logger.info(f"Range Y: [{stats['min_y']:.3f}, {stats['max_y']:.3f}]")
 
         # Calculate movement statistics
         movements = np.linalg.norm(predictions[1:] - predictions[:-1], axis=1)
-        print(f"    Movement: Mean={movements.mean():.4f}, Std={movements.std():.4f}")
-        print(f"    Final cumulative loss: {cumulative_loss:.3f}")
+        logger.info(f"Movement: Mean={movements.mean():.4f}, Std={movements.std():.4f}")
+        logger.info(f"Final cumulative loss: {cumulative_loss:.3f}")
 
         # Assess model quality
         is_centered = (test_cfg.centered_min <= stats['mean_x'] <= test_cfg.centered_max and
-                      test_cfg.centered_min <= stats['mean_y'] <= test_cfg.centered_max)
+                       test_cfg.centered_min <= stats['mean_y'] <= test_cfg.centered_max)
         has_variation = predictions.std() > test_cfg.variation_threshold
         has_movement = movements.mean() > test_cfg.movement_threshold
         avoids_edges = (stats['min_x'] > test_cfg.edge_avoid_min and
-                       stats['max_x'] < test_cfg.edge_avoid_max)
+                        stats['max_x'] < test_cfg.edge_avoid_max)
 
-        print("\n  Assessment:")
+        logger.info("\n  Assessment:")
         if is_centered and has_variation and has_movement and avoids_edges:
-            print("    ✅ Model shows varied, memory-aware gaze patterns!")
+            logger.info("✅ Model shows varied, memory-aware gaze patterns!")
         elif has_variation and has_movement:
-            print("    ⚠️  Model shows movement but may need refinement")
+            logger.info("⚠️  Model shows movement but may need refinement")
         else:
-            print("    ❌ Model needs more training")
+            logger.info("❌ Model needs more training")
 
     # Create summary plot
     if len(all_predictions) > 0:
         create_test_summary_plots(all_predictions, all_statistics)
 
-    print("\n" + "=" * 80)
-    print("Testing complete!")
-    print("=" * 80)
+    logger.info("\n" + "=" * 80)
+    logger.info("Testing complete!")
+    logger.info("=" * 80)
 
 
 def create_test_summary_plots(predictions_list: List[np.ndarray], stats_list: List[dict]):
@@ -1314,7 +1313,7 @@ def create_test_summary_plots(predictions_list: List[np.ndarray], stats_list: Li
     plt.tight_layout()
     plt.savefig('test_summary.png', dpi=300, bbox_inches='tight')
     plt.close()
-    print(f"\nTest summary plots saved to: test_summary.png")
+    logger.info("\nTest summary plots saved to: test_summary.png")
 
 
 def main():
@@ -1323,23 +1322,23 @@ def main():
 
     parser = argparse.ArgumentParser(description='LSTM Gaze Tracking System')
     parser.add_argument('--mode', type=str, choices=['train', 'test', 'both'],
-                       default='both', help='Operation mode')
+                        default='both', help='Operation mode')
     parser.add_argument('--video-folder', type=str, default=None,
-                       help='Path to video folder (overrides config)')
+                        help='Path to video folder (overrides config)')
     parser.add_argument('--model-path', type=str, default=None,
-                       help='Path to model for testing/resuming')
+                        help='Path to model for testing/resuming')
     parser.add_argument('--timesteps', type=int, default=None,
-                       help='Total training timesteps')
+                        help='Total training timesteps')
     parser.add_argument('--resume', action='store_true',
-                       help='Resume training from checkpoint')
+                        help='Resume training from checkpoint')
     parser.add_argument('--no-visualize', action='store_true',
-                       help='Disable visualization during testing')
+                        help='Disable visualization during testing')
 
     args = parser.parse_args()
 
     # Validate configuration
     if not config.validate():
-        print("Configuration validation failed. Please check your config.")
+        logger.info("Configuration validation failed. Please check your config.")
         return 1
 
     # Print configuration summary
@@ -1349,7 +1348,7 @@ def main():
     video_folder = args.video_folder or config.video.video_folder
 
     if not os.path.exists(video_folder):
-        print(f"Error: Video folder does not exist: {video_folder}")
+        logger.info(f"Error: Video folder does not exist: {video_folder}")
         return 1
 
     # Create output directories
@@ -1358,9 +1357,9 @@ def main():
 
     try:
         if args.mode in ['train', 'both']:
-            print("\n" + "=" * 80)
-            print("STARTING TRAINING")
-            print("=" * 80 + "\n")
+            logger.info("\n" + "=" * 80)
+            logger.info("STARTING TRAINING")
+            logger.info("=" * 80 + "\n")
 
             resume_path = args.model_path if args.resume else None
             model = train_lstm_model(
@@ -1369,12 +1368,12 @@ def main():
                 resume_path=resume_path
             )
 
-            print("\n✓ Training completed successfully!")
+            logger.info("\n✓ Training completed successfully!")
 
         if args.mode in ['test', 'both']:
-            print("\n" + "=" * 80)
-            print("STARTING TESTING")
-            print("=" * 80 + "\n")
+            logger.info("\n" + "=" * 80)
+            logger.info("STARTING TESTING")
+            logger.info("=" * 80 + "\n")
 
             model_path = args.model_path or config.testing.model_path
             test_lstm_model(
@@ -1383,12 +1382,12 @@ def main():
                 visualize=not args.no_visualize
             )
 
-            print("\n✓ Testing completed successfully!")
+            logger.info("\n✓ Testing completed successfully!")
 
         return 0
 
     except Exception as e:
-        print(f"\n✗ Error occurred: {e}")
+        logger.info(f"\n✗ Error occurred: {e}")
         import traceback
         traceback.print_exc()
         return 1

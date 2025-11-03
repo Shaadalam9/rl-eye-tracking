@@ -14,11 +14,15 @@ import matplotlib.pyplot as plt
 from typing import Dict, List, Tuple
 import json
 from datetime import datetime
-
 from stable_baselines3 import PPO
-
 from data_loader import WebGazerDataLoader, load_config
 from gaze_environment import create_env
+from custom_logger import CustomLogger           # structured logging
+from logmod import logs
+import common
+
+logs(show_level=common.get_configs("logger_level"), show_color=True)
+logger = CustomLogger(__name__)
 
 
 class GazeEvaluator:
@@ -56,7 +60,7 @@ class GazeEvaluator:
             Dictionary with evaluation metrics.
         """
         video_name = os.path.basename(video_path)
-        print(f"\nEvaluating: {video_name}")
+        logger.info(f"\nEvaluating: {video_name}")
 
         # Create environment for this video
         env = create_env([video_path], video_gaze_map, self.config)
@@ -102,10 +106,10 @@ class GazeEvaluator:
         metrics['num_frames'] = len(predicted)
 
         # Print summary
-        print(f"  Frames: {metrics['num_frames']}")
-        print(f"  Mean distance: {metrics['mean_distance']:.4f}")
-        print(f"  Median distance: {metrics['median_distance']:.4f}")
-        print(f"  Accuracy @0.1: {metrics['accuracy_0.1']:.1f}%")
+        logger.info(f"Frames: {metrics['num_frames']}")
+        logger.info(f"Mean distance: {metrics['mean_distance']:.4f}")
+        logger.info(f"Median distance: {metrics['median_distance']:.4f}")
+        logger.info(f"Accuracy @0.1: {metrics['accuracy_0.1']:.1f}%")
 
         return metrics
 
@@ -183,9 +187,9 @@ class GazeEvaluator:
         Returns:
             Complete evaluation results.
         """
-        print("\n" + "=" * 80)
-        print("EVALUATING MODEL ON TEST SET")
-        print("=" * 80)
+        logger.info("\n" + "=" * 80)
+        logger.info("EVALUATING MODEL ON TEST SET")
+        logger.info("=" * 80)
 
         num_episodes = self.config['testing']['num_episodes']
 
@@ -225,16 +229,16 @@ class GazeEvaluator:
         self.results['overall'] = overall
 
         # Print summary
-        print("\n" + "=" * 80)
-        print("OVERALL RESULTS")
-        print("=" * 80)
-        print(f"Videos tested: {overall['num_videos']}")
-        print(f"Total frames: {overall['total_frames']}")
-        print(f"\nMean distance: {overall['mean_mean_distance']:.4f} ± {overall['std_mean_distance']:.4f}")
-        print(f"Median distance: {overall['mean_median_distance']:.4f}")
-        print(f"Accuracy @0.1: {overall['mean_accuracy_0.1']:.1f}%")
-        print(f"Accuracy @0.2: {overall['mean_accuracy_0.2']:.1f}%")
-        print("=" * 80 + "\n")
+        logger.info("\n" + "=" * 80)
+        logger.info("OVERALL RESULTS")
+        logger.info("=" * 80)
+        logger.info(f"Videos tested: {overall['num_videos']}")
+        logger.info(f"Total frames: {overall['total_frames']}")
+        logger.info(f"\nMean distance: {overall['mean_mean_distance']:.4f} ± {overall['std_mean_distance']:.4f}")
+        logger.info(f"Median distance: {overall['mean_median_distance']:.4f}")
+        logger.info(f"Accuracy @0.1: {overall['mean_accuracy_0.1']:.1f}%")
+        logger.info(f"Accuracy @0.2: {overall['mean_accuracy_0.2']:.1f}%")
+        logger.info("=" * 80 + "\n")
 
     def save_results(self, save_path: str):
         """Saves evaluation results to JSON.
@@ -245,7 +249,7 @@ class GazeEvaluator:
         with open(save_path, 'w') as f:
             json.dump(self.results, f, indent=2)
 
-        print(f"✓ Results saved to: {save_path}")
+        logger.info(f"✓ Results saved to: {save_path}")
 
     def create_visualizations(self, save_dir: str):
         """Creates visualization plots.
@@ -253,7 +257,7 @@ class GazeEvaluator:
         Args:
             save_dir: Directory to save plots.
         """
-        print("\nCreating visualizations...")
+        logger.info("\nCreating visualizations...")
 
         os.makedirs(save_dir, exist_ok=True)
 
@@ -266,7 +270,7 @@ class GazeEvaluator:
         # 3. Per-video comparison
         self._plot_per_video_comparison(os.path.join(save_dir, "per_video_comparison.png"))
 
-        print(f"✓ Visualizations saved to: {save_dir}")
+        logger.info(f"✓ Visualizations saved to: {save_dir}")
 
     def _plot_distance_distribution(self, save_path: str):
         """Plots histogram of distances."""
@@ -357,9 +361,9 @@ class GazeEvaluator:
 
 def main():
     """Main testing function."""
-    print("\n" + "=" * 80)
-    print("WEBGAZER GAZE PREDICTION TESTING")
-    print("=" * 80 + "\n")
+    logger.info("\n" + "=" * 80)
+    logger.info("WEBGAZER GAZE PREDICTION TESTING")
+    logger.info("=" * 80 + "\n")
 
     # Load configuration
     config = load_config("config.yaml")
@@ -369,8 +373,8 @@ def main():
     split_path = os.path.join(output_dir, "data_split.yaml")
 
     if not os.path.exists(split_path):
-        print(f"❌ Data split not found: {split_path}")
-        print("Please run train.py first!")
+        logger.info(f"❌ Data split not found: {split_path}")
+        logger.info("Please run train.py first!")
         return
 
     with open(split_path, 'r') as f:
@@ -378,24 +382,24 @@ def main():
 
     test_videos = [v['name'] for v in split_data['test_videos']]
 
-    print(f"Found {len(test_videos)} test videos:")
+    logger.info(f"Found {len(test_videos)} test videos:")
     for v in test_videos:
-        print(f"  - {v}")
+        logger.info(f"  - {v}")
 
     # Load model
     model_path = os.path.join(output_dir, "final_model")
 
     if not os.path.exists(model_path + ".zip"):
-        print(f"\n❌ Model not found: {model_path}.zip")
-        print("Please run train.py first!")
+        logger.info(f"\n❌ Model not found: {model_path}.zip")
+        logger.info("Please run train.py first!")
         return
 
-    print(f"\nLoading model from: {model_path}")
+    logger.info(f"\nLoading model from: {model_path}")
     model = PPO.load(model_path)
-    print("✓ Model loaded successfully")
+    logger.info("✓ Model loaded successfully")
 
     # Load gaze data
-    print("\nLoading gaze data...")
+    logger.info("\nLoading gaze data...")
     loader = WebGazerDataLoader(
         json_folder=config['data']['json_folder'],
         video_folder=config['data']['video_folder'],
@@ -421,12 +425,12 @@ def main():
     vis_dir = os.path.join(output_dir, f"visualizations_{timestamp}")
     evaluator.create_visualizations(vis_dir)
 
-    print("\n" + "=" * 80)
-    print("✓ TESTING COMPLETED SUCCESSFULLY!")
-    print("=" * 80)
-    print(f"\nResults: {results_path}")
-    print(f"Visualizations: {vis_dir}")
-    print("=" * 80 + "\n")
+    logger.info("\n" + "=" * 80)
+    logger.info("✓ TESTING COMPLETED SUCCESSFULLY!")
+    logger.info("=" * 80)
+    logger.info(f"\nResults: {results_path}")
+    logger.info(f"Visualizations: {vis_dir}")
+    logger.info("=" * 80 + "\n")
 
 
 if __name__ == "__main__":

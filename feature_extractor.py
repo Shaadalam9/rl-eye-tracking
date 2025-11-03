@@ -12,6 +12,12 @@ import torch.nn as nn
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from gymnasium import spaces
 from typing import Dict
+from custom_logger import CustomLogger           # structured logging
+from logmod import logs
+import common
+
+logs(show_level=common.get_configs("logger_level"), show_color=True)
+logger = CustomLogger(__name__)
 
 
 class CNNLSTMGazeExtractor(BaseFeaturesExtractor):
@@ -149,13 +155,13 @@ class CNNLSTMGazeExtractor(BaseFeaturesExtractor):
         self._features_dim = features_dim
         self.grayscale = config['video']['grayscale']
 
-        print(f"CNNLSTMGazeExtractor initialized")
-        print(f"  CNN input channels: {frame_stack * channels}")
-        print(f"  CNN output dim: {cnn_output_dim}")
-        print(f"  LSTM output dim: {lstm_output_dim}")
-        print(f"  Combined dim: {combined_dim}")
-        print(f"  Features dim: {features_dim}")
-        print(f"  Grayscale: {self.grayscale}")
+        logger.info("CNNLSTMGazeExtractor initialized")
+        logger.info(f"CNN input channels: {frame_stack * channels}")
+        logger.info(f"CNN output dim: {cnn_output_dim}")
+        logger.info(f"LSTM output dim: {lstm_output_dim}")
+        logger.info(f"Combined dim: {combined_dim}")
+        logger.info(f"Features dim: {features_dim}")
+        logger.info(f"Grayscale: {self.grayscale}")
 
     def forward(self, observations: Dict[str, torch.Tensor]) -> torch.Tensor:
         """Forward pass through the network.
@@ -270,9 +276,9 @@ if __name__ == "__main__":
     # Create feature extractor
     extractor = CNNLSTMGazeExtractor(obs_space, features_dim=256, config=config)
 
-    print("\n" + "=" * 80)
-    print("TESTING FEATURE EXTRACTOR")
-    print("=" * 80 + "\n")
+    logger.info("\n" + "=" * 80)
+    logger.info("TESTING FEATURE EXTRACTOR")
+    logger.info("=" * 80 + "\n")
 
     # Create dummy batch
     batch_size = 4
@@ -288,16 +294,16 @@ if __name__ == "__main__":
         'frame_index_normalized': torch.rand(batch_size, 1, dtype=torch.float32)
     }
 
-    print("Input shapes:")
+    logger.info("Input shapes:")
     for key, val in dummy_obs.items():
-        print(f"  {key}: {val.shape}")
+        logger.info(f"  {key}: {val.shape}")
 
     # Forward pass
     features = extractor(dummy_obs)
 
-    print(f"\nOutput shape: {features.shape}")
-    print(f"Expected: ({batch_size}, 256)")
+    logger.info(f"\nOutput shape: {features.shape}")
+    logger.info(f"Expected: ({batch_size}, 256)")
 
-    print("\n" + "=" * 80)
-    print("✓ Feature extractor test completed!")
-    print("=" * 80 + "\n")
+    logger.info("\n" + "=" * 80)
+    logger.info("✓ Feature extractor test completed!")
+    logger.info("=" * 80 + "\n")

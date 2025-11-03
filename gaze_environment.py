@@ -12,8 +12,16 @@ from gymnasium import spaces
 import numpy as np
 import cv2
 import os
-from typing import Dict, Tuple, Any, List, Optional
+from typing import Dict, Tuple, List, Optional
 from collections import deque
+from custom_logger import CustomLogger           # structured logging
+from logmod import logs
+import common
+from data_loader import WebGazerDataLoader, load_config
+import yaml
+
+logs(show_level=common.get_configs("logger_level"), show_color=True)
+logger = CustomLogger(__name__)
 
 
 class WebGazerGazeEnv(gym.Env):
@@ -120,12 +128,12 @@ class WebGazerGazeEnv(gym.Env):
         self.episode_rewards = []
         self.episode_distances = []
 
-        print(f"WebGazerGazeEnv initialized")
-        print(f"  Videos: {len(self.video_files)}")
-        print(f"  Frame stack: {self.frame_stack}")
-        print(f"  Frame size: {self.target_width}x{self.target_height}")
-        print(f"  Grayscale: {self.grayscale}")
-        print(f"  Frames shape: {frames_shape}")
+        logger.info("WebGazerGazeEnv initialized")
+        logger.info(f"Videos: {len(self.video_files)}")
+        logger.info(f"Frame stack: {self.frame_stack}")
+        logger.info(f"Frame size: {self.target_width}x{self.target_height}")
+        logger.info(f"Grayscale: {self.grayscale}")
+        logger.info(f"Frames shape: {frames_shape}")
 
     def _load_video(self, video_idx: int):
         """Loads a video and its associated gaze data.
@@ -184,9 +192,9 @@ class WebGazerGazeEnv(gym.Env):
         else:
             raise ValueError(f"No gaze data for video: {video_name}")
 
-        print(f"Loaded video: {video_name}")
-        print(f"  Total frames: {self.total_frames}")
-        print(f"  Gaze points: {len(self.current_gazes)} (shape: {self.current_gazes.shape})")
+        logger.info(f"Loaded video: {video_name}")
+        logger.info(f"Total frames: {self.total_frames}")
+        logger.info(f"Gaze points: {len(self.current_gazes)} (shape: {self.current_gazes.shape})")
 
     def _preprocess_frame(self, frame: np.ndarray) -> np.ndarray:
         """Preprocesses a video frame.
@@ -491,8 +499,6 @@ def create_env(video_files: List[str],
 
 if __name__ == "__main__":
     # Test the environment
-    import yaml
-    from data_loader import WebGazerDataLoader, load_config
 
     # Load config
     config = load_config("config.yaml")
@@ -508,7 +514,7 @@ if __name__ == "__main__":
     available_videos, _ = loader.verify_video_files(video_gaze_map)
 
     if len(available_videos) == 0:
-        print("No videos available for testing!")
+        logger.info("No videos available for testing!")
         exit(1)
 
     # Get full paths
@@ -518,44 +524,44 @@ if __name__ == "__main__":
     # Create environment
     env = create_env(video_paths, video_gaze_map, config)
 
-    print("\n" + "=" * 80)
-    print("TESTING ENVIRONMENT")
-    print("=" * 80 + "\n")
+    logger.info("\n" + "=" * 80)
+    logger.info("TESTING ENVIRONMENT")
+    logger.info("=" * 80 + "\n")
 
     # Test reset
     obs, info = env.reset()
-    print(f"Observation space: {env.observation_space}")
-    print(f"Action space: {env.action_space}")
-    print(f"Frames shape: {obs['frames'].shape}")
-    print(f"Gaze history shape: {obs['gaze_history'].shape}")
+    logger.info(f"Observation space: {env.observation_space}")
+    logger.info(f"Action space: {env.action_space}")
+    logger.info(f"Frames shape: {obs['frames'].shape}")
+    logger.info(f"Gaze history shape: {obs['gaze_history'].shape}")
 
     # Verify shapes
-    print(f"\nShape verification:")
-    print(f"  Expected frames: {env.observation_space['frames'].shape}")
-    print(f"  Actual frames: {obs['frames'].shape}")
-    print(f"  Expected gaze_history: ({env.frame_stack}, 2)")
-    print(f"  Actual gaze_history: {obs['gaze_history'].shape}")
+    logger.info("\nShape verification:")
+    logger.info(f"  Expected frames: {env.observation_space['frames'].shape}")
+    logger.info(f"  Actual frames: {obs['frames'].shape}")
+    logger.info(f"  Expected gaze_history: ({env.frame_stack}, 2)")
+    logger.info(f"  Actual gaze_history: {obs['gaze_history'].shape}")
 
     # Test a few steps
-    print("\nTesting 5 steps:")
+    logger.info("\nTesting 5 steps:")
     for i in range(5):
         # Random action
         action = env.action_space.sample()
         obs, reward, terminated, truncated, info = env.step(action)
 
-        print(f"  Step {i + 1}:")
-        print(f"    Action shape: {action.shape}, values: ({action[0]:.4f}, {action[1]:.4f})")
-        print(f"    Expert shape: {info['expert_gaze'].shape}, values: ({info['expert_gaze'][0]:.4f}, {info['expert_gaze'][1]:.4f})")
-        print(f"    Distance: {info['distance']:.4f}")
-        print(f"    Reward: {reward:.4f}")
-        print(f"    Frames shape: {obs['frames'].shape}")
+        logger.info(f"Step {i + 1}:")
+        logger.info(f"Action shape: {action.shape}, values: ({action[0]:.4f}, {action[1]:.4f})")
+        logger.info(f"Expert shape: {info['expert_gaze'].shape}, values: ({info['expert_gaze'][0]:.4f}, {info['expert_gaze'][1]:.4f})")
+        logger.info(f"Distance: {info['distance']:.4f}")
+        logger.info(f"Reward: {reward:.4f}")
+        logger.info(f"Frames shape: {obs['frames'].shape}")
 
         if terminated or truncated:
-            print("    Episode ended")
+            logger.info("    Episode ended")
             break
 
     env.close()
 
-    print("\n" + "=" * 80)
-    print("✓ Environment test completed!")
-    print("=" * 80 + "\n")
+    logger.info("\n" + "=" * 80)
+    logger.info("✓ Environment test completed!")
+    logger.info("=" * 80 + "\n")

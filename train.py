@@ -12,22 +12,25 @@ Date: 2025-10-30
 """
 
 import os
-import yaml
 import numpy as np
 import torch
 from datetime import datetime
-from typing import Dict, List
+from typing import Dict
 import json
-
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3.common.callbacks import (
     BaseCallback, CheckpointCallback, EvalCallback
 )
-
 from data_loader import WebGazerDataLoader, load_config
 from gaze_environment import create_env
 from feature_extractor import CNNLSTMGazeExtractor
+from custom_logger import CustomLogger           # structured logging
+from logmod import logs
+import common
+
+logs(show_level=common.get_configs("logger_level"), show_color=True)
+logger = CustomLogger(__name__)
 
 
 class TrainingLogger(BaseCallback):
@@ -80,13 +83,13 @@ class TrainingLogger(BaseCallback):
                 mean_reward = np.mean(self.episode_rewards[-10:])
                 mean_length = np.mean(self.episode_lengths[-10:])
 
-                print(f"\nStep {self.step_count}:")
-                print(f"  Mean reward (last 10): {mean_reward:.2f}")
-                print(f"  Mean length (last 10): {mean_length:.1f}")
+                logger.info(f"\nStep {self.step_count}:")
+                logger.info(f"  Mean reward (last 10): {mean_reward:.2f}")
+                logger.info(f"  Mean length (last 10): {mean_length:.1f}")
 
                 if len(self.episode_distances) > 0:
                     mean_dist = np.mean(self.episode_distances[-10:])
-                    print(f"  Mean distance (last 10): {mean_dist:.4f}")
+                    logger.info(f"  Mean distance (last 10): {mean_dist:.4f}")
 
         return True
 
@@ -107,7 +110,7 @@ class TrainingLogger(BaseCallback):
         with open(save_path, 'w') as f:
             json.dump(metrics, f, indent=2)
 
-        print(f"✓ Metrics saved to: {save_path}")
+        logger.info(f"✓ Metrics saved to: {save_path}")
 
 
 def create_lr_schedule(config: Dict):
@@ -147,7 +150,7 @@ def create_lr_schedule(config: Dict):
         return exponential_schedule
 
     else:
-        print(f"Unknown LR schedule type: {lr_cfg['type']}, using constant")
+        logger.info(f"Unknown LR schedule type: {lr_cfg['type']}, using constant")
         return initial_lr
 
 
@@ -160,9 +163,9 @@ def setup_training(config: Dict) -> Dict:
     Returns:
         Dictionary with training components.
     """
-    print("\n" + "="*80)
-    print("SETUP TRAINING")
-    print("="*80 + "\n")
+    logger.info("\n" + "="*80)
+    logger.info("SETUP TRAINING")
+    logger.info("="*80 + "\n")
 
     # Set random seeds
     if config['reproducibility']['set_seed']:
@@ -171,15 +174,15 @@ def setup_training(config: Dict) -> Dict:
         torch.manual_seed(seed)
         if torch.cuda.is_available():
             torch.cuda.manual_seed(seed)
-        print(f"✓ Random seed set to: {seed}")
+        logger.info(f"✓ Random seed set to: {seed}")
 
     # Create output directory
     output_dir = config['data']['output_folder']
     os.makedirs(output_dir, exist_ok=True)
-    print(f"✓ Output directory: {output_dir}")
+    logger.info(f"✓ Output directory: {output_dir}")
 
     # Load data
-    print("\nLoading data...")
+    logger.info("\nLoading data...")
     loader = WebGazerDataLoader(
         json_folder=config['data']['json_folder'],
         video_folder=config['data']['video_folder'],
@@ -228,12 +231,9 @@ def create_ppo_model(env, config: Dict, output_dir: str):
     Returns:
         PPO model instance.
     """
-    print("\n" + "="*80)
-    print("CREATING PPO MODEL")
-    print("="*80 + "\n")
-
-    # Policy kwargs - FIXED: Pass class directly, not function
-    from feature_extractor import CNNLSTMGazeExtractor
+    logger.info("\n" + "="*80)
+    logger.info("CREATING PPO MODEL")
+    logger.info("="*80 + "\n")
 
     policy_kwargs = dict(
         features_extractor_class=CNNLSTMGazeExtractor,
@@ -258,9 +258,9 @@ def create_ppo_model(env, config: Dict, output_dir: str):
     if device == 'auto':
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-    print(f"Device: {device}")
-    print(f"Initial learning rate: {ppo_cfg['learning_rate']}")
-    print(f"Total timesteps: {config['training']['total_timesteps']:,}")
+    logger.info(f"Device: {device}")
+    logger.info(f"Initial learning rate: {ppo_cfg['learning_rate']}")
+    logger.info(f"Total timesteps: {config['training']['total_timesteps']:,}")
 
     # Create model
     model = PPO(
@@ -284,7 +284,7 @@ def create_ppo_model(env, config: Dict, output_dir: str):
         tensorboard_log=config['logging']['tensorboard_log'] if config['logging']['use_tensorboard'] else None
     )
 
-    print("✓ PPO model created successfully")
+    logger.info("✓ PPO model created successfully")
 
     return model
 
@@ -299,9 +299,9 @@ def train_model(setup_data: Dict, config: Dict):
     Returns:
         Trained PPO model.
     """
-    print("\n" + "="*80)
-    print("STARTING TRAINING")
-    print("="*80 + "\n")
+    logger.info("\n" + "="*80)
+    logger.info("STARTING TRAINING")
+    logger.info("="*80 + "\n")
 
     # Create training environment
     def make_env():
@@ -358,8 +358,8 @@ def train_model(setup_data: Dict, config: Dict):
 
     # Train
     timestamp_start = datetime.now()
-    print(f"Training started at: {timestamp_start}")
-    print(f"Total timesteps: {config['training']['total_timesteps']:,}\n")
+    logger.info(f"Training started at: {timestamp_start}")
+    logger.info(f"Total timesteps: {config['training']['total_timesteps']:,}\n")
 
     try:
         model.learn(
@@ -368,21 +368,21 @@ def train_model(setup_data: Dict, config: Dict):
             progress_bar=True
         )
     except KeyboardInterrupt:
-        print("\n\nTraining interrupted by user!")
+        logger.error("\n\nTraining interrupted by user!")
 
     timestamp_end = datetime.now()
     duration = timestamp_end - timestamp_start
 
-    print(f"\n{'='*80}")
-    print("TRAINING COMPLETED")
-    print(f"{'='*80}")
-    print(f"Duration: {duration}")
-    print(f"{'='*80}\n")
+    logger.info(f"\n{'='*80}")
+    logger.info("TRAINING COMPLETED")
+    logger.info(f"{'='*80}")
+    logger.info(f"Duration: {duration}")
+    logger.info(f"{'='*80}\n")
 
     # Save final model
     final_model_path = os.path.join(setup_data['output_dir'], "final_model")
     model.save(final_model_path)
-    print(f"✓ Final model saved to: {final_model_path}")
+    logger.info(f"✓ Final model saved to: {final_model_path}")
 
     # Save training metrics
     metrics_path = os.path.join(setup_data['output_dir'], "training_metrics.json")
@@ -398,24 +398,23 @@ def train_model(setup_data: Dict, config: Dict):
 
 def main():
     """Main training function."""
-    print("\n" + "="*80)
-    print("WEBGAZER GAZE PREDICTION TRAINING")
-    print("="*80)
-    print("Using PPO + LSTM + CNN")
-    print("="*80 + "\n")
+    logger.info("\n" + "="*80)
+    logger.info("WEBGAZER GAZE PREDICTION TRAINING")
+    logger.info("="*80)
+    logger.info("Using PPO + LSTM + CNN")
+    logger.info("="*80 + "\n")
 
     # Load configuration
     config = load_config("config.yaml")
 
     # Print configuration summary
-    print("Configuration:")
-    print(f"  JSON folder: {config['data']['json_folder']}")
-    print(f"  Video folder: {config['data']['video_folder']}")
-    print(f"  Output folder: {config['data']['output_folder']}")
-    print(f"  Total timesteps: {config['training']['total_timesteps']:,}")
-    print(f"  Frame stack: {config['video']['frame_stack']}")
-    print(f"  Frame size: {config['video']['target_width']}x{config['video']['target_height']}")
-    print()
+    logger.info("Configuration:")
+    logger.info(f"  JSON folder: {config['data']['json_folder']}")
+    logger.info(f"  Video folder: {config['data']['video_folder']}")
+    logger.info(f"  Output folder: {config['data']['output_folder']}")
+    logger.info(f"  Total timesteps: {config['training']['total_timesteps']:,}")
+    logger.info(f"  Frame stack: {config['video']['frame_stack']}")
+    logger.info(f"  Frame size: {config['video']['target_width']}x{config['video']['target_height']}")
 
     # Setup training
     setup_data = setup_training(config)
@@ -423,15 +422,15 @@ def main():
     # Train model
     model = train_model(setup_data, config)
 
-    print("\n" + "="*80)
-    print("✓ TRAINING PIPELINE COMPLETED SUCCESSFULLY!")
-    print("="*80)
-    print(f"\nResults saved in: {setup_data['output_dir']}")
-    print("\nNext steps:")
-    print("  1. Run test.py to evaluate on test videos")
-    print("  2. Check tensorboard logs:")
-    print(f"     tensorboard --logdir={config['logging']['tensorboard_log']}")
-    print("="*80 + "\n")
+    logger.info("\n" + "="*80)
+    logger.info("✓ TRAINING PIPELINE COMPLETED SUCCESSFULLY!")
+    logger.info("="*80)
+    logger.info(f"\nResults saved in: {setup_data['output_dir']}")
+    logger.info("\nNext steps:")
+    logger.info("1. Run test.py to evaluate on test videos")
+    logger.info("2. Check tensorboard logs:")
+    logger.info(f"tensorboard --logdir={config['logging']['tensorboard_log']}")
+    logger.info("="*80 + "\n")
 
 
 if __name__ == "__main__":
