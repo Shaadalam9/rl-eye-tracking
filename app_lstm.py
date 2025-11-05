@@ -1,9 +1,29 @@
+"""
+LSTM-based Gaze Tracking System with Reinforcement Learning - Complete Implementation.
+
+This module implements an end-to-end gaze prediction system using PPO (Proximal Policy Optimization)
+with an LSTM-enhanced neural network architecture. The system learns to predict human gaze patterns
+from video frames by imitating expert demonstrations through reinforcement learning.
+
+Key Features:
+    - Frame-based visual processing with CNN
+    - Temporal memory using LSTM
+    - Loss-aware state representation
+    - Exponential learning rate decay
+    - Configurable architecture and hyperparameters
+    - Comprehensive logging and visualization
+    - Checkpoint saving and resume capability
+
+Author: Sudhanshu Anand
+Date: 2025-10-27
+"""
+
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
 import cv2
 import os
-from typing import Dict, Tuple, List, Optional, Callable
+from typing import Dict, Tuple, List, Optional
 import torch
 import torch.nn as nn
 from stable_baselines3 import PPO
@@ -14,11 +34,16 @@ import glob
 from collections import deque
 import random
 import matplotlib.pyplot as plt
-from datetime import datetime
 import json
+from custom_logger import CustomLogger           # structured logging
+from logmod import logs
+import common
 
 # Import configuration
 from config import config
+
+logs(show_level=common.get_configs("logger_level"), show_color=True)
+logger = CustomLogger(__name__)
 
 
 class LearningRateLogger(BaseCallback):
@@ -69,7 +94,7 @@ class LearningRateLogger(BaseCallback):
             self.lr_history.append(lr_value)
             self.step_history.append(self.num_timesteps)
 
-            print(f"Step {self.num_timesteps}: LR = {lr_value:.6e}")
+            logger.info(f"Step {self.num_timesteps}: LR = {lr_value:.6e}")
 
         return True
 
@@ -85,7 +110,7 @@ class LearningRateLogger(BaseCallback):
             plt.yscale('log')
             plt.savefig(save_path, dpi=300, bbox_inches='tight')
             plt.close()
-            print(f"Learning rate curve saved to {save_path}")
+            logger.info(f"Learning rate curve saved to {save_path}")
 
 
 class MetricsLogger(BaseCallback):
@@ -110,7 +135,7 @@ class MetricsLogger(BaseCallback):
 
                     if self.episode_count % 10 == 0:
                         mean_reward = np.mean(self.episode_rewards[-10:])
-                        print(f"Episode {self.episode_count}: Mean Reward (last 10) = {mean_reward:.2f}")
+                        logger.info(f"Episode {self.episode_count}: Mean Reward (last 10) = {mean_reward:.2f}")
 
         return True
 
@@ -124,7 +149,7 @@ class MetricsLogger(BaseCallback):
 
         with open(save_path, 'w') as f:
             json.dump(metrics, f, indent=2)
-        print(f"Training metrics saved to {save_path}")
+        logger.info(f"Training metrics saved to {save_path}")
 
 
 class EnhancedGazeEnv(gym.Env):
@@ -146,7 +171,7 @@ class EnhancedGazeEnv(gym.Env):
         observation_space: Dict space containing frames, gaze history, loss history, etc.
     """
 
-    def __init__(self, video_folder: str, frame_stack: Optional[int] = None, max_videos: Optional[int] = None):
+    def __init__(self, video_folder: str, frame_stack: int = None, max_videos: int = None):
         """
         Initialize the gaze prediction environment.
 
@@ -168,7 +193,7 @@ class EnhancedGazeEnv(gym.Env):
         if len(self.video_files) == 0:
             raise ValueError(f"No video files found in {video_folder}")
 
-        print(f"Loaded {len(self.video_files)} videos for training")
+        logger.info(f"Loaded {len(self.video_files)} videos for training")
 
         # Define action space - continuous gaze coordinates normalized to [0, 1]
         self.action_space = spaces.Box(
@@ -437,7 +462,7 @@ class EnhancedGazeEnv(gym.Env):
             # Default dimensions if frame read fails
             self.width, self.height = 1920, 1080
 
-        print(f"Processing: {os.path.basename(video_path)} - {self.total_frames} frames")
+        logger.info(f"Processing: {os.path.basename(video_path)} - {self.total_frames} frames")
 
         # Initialize temporal buffers with maximum length
         self.frame_buffer = deque(maxlen=self.frame_stack)
@@ -466,7 +491,7 @@ class EnhancedGazeEnv(gym.Env):
         gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         return cv2.resize(gray_frame, self.target_size)
 
-    def reset(self, seed: Optional[int] = None, options: Optional[dict] = None) -> Tuple[Dict, dict]:
+    def reset(self, seed: int = None, options: dict = None) -> Tuple[Dict, dict]:
         """
         Reset environment to initial state.
 
@@ -492,7 +517,7 @@ class EnhancedGazeEnv(gym.Env):
 
         # Load initial frame stack
         for i in range(self.frame_stack):
-            ret, frame = self.cap.read()  # pyright: ignore[reportOptionalMemberAccess]
+            ret, frame = self.cap.read()
             if ret:
                 processed_frame = self._preprocess_frame(frame)
                 self.frame_buffer.append(processed_frame)
@@ -548,7 +573,7 @@ class EnhancedGazeEnv(gym.Env):
             Tuple of (observation, reward, terminated, truncated, info)
         """
         # Read next frame
-        ret, frame = self.cap.read()  # pyright: ignore[reportOptionalMemberAccess]
+        ret, frame = self.cap.read()
 
         # Check if video ended
         if not ret or self.current_frame_idx >= self.total_frames - 1:
@@ -630,7 +655,7 @@ class LSTMGazeCNN(BaseFeaturesExtractor):
         combined_net: Final fusion network
     """
 
-    def __init__(self, observation_space: gym.spaces.Dict, features_dim: Optional[int] = None):
+    def __init__(self, observation_space: gym.spaces.Dict, features_dim: int = None):
         """
         Initialize LSTM-CNN feature extractor.
 
@@ -771,7 +796,7 @@ class LSTMGazeCNN(BaseFeaturesExtractor):
         # Process through LSTM (detach hidden states to prevent backprop through time)
         lstm_out, (self.hidden_state, self.cell_state) = self.lstm(
             lstm_input,
-            (self.hidden_state.detach(), self.cell_state.detach())  # pyright: ignore[reportOptionalMemberAccess]
+            (self.hidden_state.detach(), self.cell_state.detach())
         )
 
         # Use last LSTM output as temporal features
@@ -791,7 +816,7 @@ class LSTMGazeCNN(BaseFeaturesExtractor):
         self.cell_state = None
 
 
-def exponential_schedule(initial_value: float) -> Callable[[float], float]:
+def exponential_schedule(initial_value: float) -> callable:
     """
     Create exponential decay learning rate schedule.
 
@@ -830,8 +855,8 @@ def exponential_schedule(initial_value: float) -> Callable[[float], float]:
     return func
 
 
-def train_lstm_model(video_folder: str, total_timesteps: Optional[int] = None, verbose_lr: Optional[bool] = None,
-                     checkpoint_freq: Optional[int] = None, resume_path: Optional[str] = None) -> PPO:
+def train_lstm_model(video_folder: str, total_timesteps: int = None, verbose_lr: bool = None,
+                     checkpoint_freq: int = None, resume_path: Optional[str] = None) -> PPO:
     """
     Train LSTM-based gaze prediction model using PPO.
 
@@ -852,8 +877,8 @@ def train_lstm_model(video_folder: str, total_timesteps: Optional[int] = None, v
     Returns:
         Trained PPO model
     """
-    print("Training LSTM-based Gaze Model with Exponential LR Decay...")
-    print("=" * 80)
+    logger.info("Training LSTM-based Gaze Model with Exponential LR Decay...")
+    logger.info("=" * 80)
 
     # Load configuration
     total_timesteps = total_timesteps or config.training.total_timesteps
@@ -879,24 +904,23 @@ def train_lstm_model(video_folder: str, total_timesteps: Optional[int] = None, v
     initial_lr = config.learning_rate.initial_lr
     lr_schedule = exponential_schedule(initial_lr)
 
-    print("Learning Rate Schedule: Exponential Decay")
-    print(f"  Initial LR: {initial_lr:.2e}")
-    print(f"  Decay rate: {config.learning_rate.exponential_decay_rate}")
-    print(f"  Min LR: {initial_lr * config.learning_rate.exponential_min_lr_factor:.2e}")
-    print()
+    logger.info("Learning Rate Schedule: Exponential Decay")
+    logger.info(f"Initial LR: {initial_lr:.2e}")
+    logger.info(f"  Decay rate: {config.learning_rate.exponential_decay_rate}")
+    logger.info(f"  Min LR: {initial_lr * config.learning_rate.exponential_min_lr_factor:.2e}")
 
     # Create or load PPO model
     train_cfg = config.training
     device = train_cfg.device if torch.cuda.is_available() else 'cpu'
 
     if resume_path and os.path.exists(resume_path):
-        print(f"Resuming training from: {resume_path}")
+        logger.info(f"Resuming training from: {resume_path}")
         model = PPO.load(
             resume_path,
             env=env,
             device=device
         )
-        print("Model loaded successfully!")
+        logger.info("Model loaded successfully!")
     else:
         model = PPO(
             "MultiInputPolicy",
@@ -937,10 +961,10 @@ def train_lstm_model(video_folder: str, total_timesteps: Optional[int] = None, v
     callbacks.append(checkpoint_callback)
 
     # Train model
-    print(f"Training for {total_timesteps:,} timesteps...")
-    print(f"Device: {model.device}")
-    print(f"Checkpoints will be saved every {checkpoint_freq:,} steps")
-    print("=" * 80 + "\n")
+    logger.info(f"Training for {total_timesteps:,} timesteps...")
+    logger.info(f"Device: {model.device}")
+    logger.info(f"Checkpoints will be saved every {checkpoint_freq:,} steps")
+    logger.info("=" * 80 + "\n")
 
     try:
         model.learn(
@@ -950,7 +974,7 @@ def train_lstm_model(video_folder: str, total_timesteps: Optional[int] = None, v
 
         # Save final model
         model.save(train_cfg.model_save_path)
-        print(f"\n✓ Model saved to: {train_cfg.model_save_path}")
+        logger.info(f"\n✓ Model saved to: {train_cfg.model_save_path}")
 
         # Save metrics and plots
         if verbose_lr:
@@ -967,10 +991,10 @@ def train_lstm_model(video_folder: str, total_timesteps: Optional[int] = None, v
             )
 
     except KeyboardInterrupt:
-        print("\n\nTraining interrupted by user!")
-        print("Saving current model state...")
+        logger.info("\n\nTraining interrupted by user!")
+        logger.info("Saving current model state...")
         model.save(f"{train_cfg.model_save_path}_interrupted")
-        print(f"Model saved to: {train_cfg.model_save_path}_interrupted")
+        logger.info(f"Model saved to: {train_cfg.model_save_path}_interrupted")
 
     env.close()
     return model
@@ -1002,10 +1026,10 @@ def plot_training_curve(data: List[float], title: str, save_path: str):
     plt.grid(True, alpha=0.3)
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     plt.close()
-    print(f"Training curve saved to {save_path}")
+    logger.info(f"Training curve saved to {save_path}")
 
 
-def test_lstm_model(video_folder: str, model_path: Optional[str] = None, visualize: bool = True):
+def test_lstm_model(video_folder: str, model_path: str = None, visualize: bool = True):
     """
     Test trained LSTM model on video sequences.
 
@@ -1014,9 +1038,9 @@ def test_lstm_model(video_folder: str, model_path: Optional[str] = None, visuali
         model_path: Path to saved model (uses config if None)
         visualize: Whether to create visualization video
     """
-    print("\n" + "=" * 80)
-    print("TESTING LSTM MODEL")
-    print("=" * 80)
+    logger.info("\n" + "=" * 80)
+    logger.info("TESTING LSTM MODEL")
+    logger.info("=" * 80)
 
     # Load configuration
     test_cfg = config.testing
@@ -1025,9 +1049,9 @@ def test_lstm_model(video_folder: str, model_path: Optional[str] = None, visuali
     # Load trained model
     try:
         model = PPO.load(model_path)
-        print(f"✓ Model loaded: {model_path}\n")
+        logger.info(f"✓ Model loaded: {model_path}\n")
     except Exception as e:
-        print(f"✗ Error loading model: {e}")
+        logger.error(f"✗ Error loading model: {e}")
         return
 
     # Get test videos
@@ -1039,8 +1063,8 @@ def test_lstm_model(video_folder: str, model_path: Optional[str] = None, visuali
 
     # Test on each video
     for video_idx, video_path in enumerate(video_files):
-        print(f"\nTesting on: {os.path.basename(video_path)}")
-        print("-" * 80)
+        logger.info(f"\nTesting on: {os.path.basename(video_path)}")
+        logger.info("-" * 80)
 
         # Initialize video capture
         cap = cv2.VideoCapture(video_path)
@@ -1163,7 +1187,7 @@ def test_lstm_model(video_folder: str, model_path: Optional[str] = None, visuali
         cap.release()
         if video_writer:
             video_writer.release()
-            print(f"  Visualization saved to: {output_path}")
+            logger.info(f"Visualization saved to: {output_path}")
 
         # Analyze predictions
         predictions = np.array(predictions)
@@ -1182,16 +1206,16 @@ def test_lstm_model(video_folder: str, model_path: Optional[str] = None, visuali
         all_predictions.append(predictions)
         all_statistics.append(stats)
 
-        print("\n  Prediction Statistics:")
-        print(f"Mean:     X={stats['mean_x']:.3f}, Y={stats['mean_y']:.3f}")
-        print(f"Std Dev:  X={stats['std_x']:.3f}, Y={stats['std_y']:.3f}")
-        print(f"Range X:  [{stats['min_x']:.3f}, {stats['max_x']:.3f}]")
-        print(f"Range Y:  [{stats['min_y']:.3f}, {stats['max_y']:.3f}]")
+        logger.info("\n  Prediction Statistics:")
+        logger.info(f"Mean: X={stats['mean_x']:.3f}, Y={stats['mean_y']:.3f}")
+        logger.info(f"Std Dev: X={stats['std_x']:.3f}, Y={stats['std_y']:.3f}")
+        logger.info(f"Range X: [{stats['min_x']:.3f}, {stats['max_x']:.3f}]")
+        logger.info(f"Range Y: [{stats['min_y']:.3f}, {stats['max_y']:.3f}]")
 
         # Calculate movement statistics
         movements = np.linalg.norm(predictions[1:] - predictions[:-1], axis=1)
-        print(f"    Movement: Mean={movements.mean():.4f}, Std={movements.std():.4f}")
-        print(f"    Final cumulative loss: {cumulative_loss:.3f}")
+        logger.info(f"Movement: Mean={movements.mean():.4f}, Std={movements.std():.4f}")
+        logger.info(f"Final cumulative loss: {cumulative_loss:.3f}")
 
         # Assess model quality
         is_centered = (test_cfg.centered_min <= stats['mean_x'] <= test_cfg.centered_max and
@@ -1201,21 +1225,21 @@ def test_lstm_model(video_folder: str, model_path: Optional[str] = None, visuali
         avoids_edges = (stats['min_x'] > test_cfg.edge_avoid_min and
                         stats['max_x'] < test_cfg.edge_avoid_max)
 
-        print("\n  Assessment:")
+        logger.info("\n  Assessment:")
         if is_centered and has_variation and has_movement and avoids_edges:
-            print("✅ Model shows varied, memory-aware gaze patterns!")
+            logger.info("✅ Model shows varied, memory-aware gaze patterns!")
         elif has_variation and has_movement:
-            print("⚠️  Model shows movement but may need refinement")
+            logger.info("⚠️  Model shows movement but may need refinement")
         else:
-            print("❌ Model needs more training")
+            logger.info("❌ Model needs more training")
 
     # Create summary plot
     if len(all_predictions) > 0:
         create_test_summary_plots(all_predictions, all_statistics)
 
-    print("\n" + "=" * 80)
-    print("Testing complete!")
-    print("=" * 80)
+    logger.info("\n" + "=" * 80)
+    logger.info("Testing complete!")
+    logger.info("=" * 80)
 
 
 def create_test_summary_plots(predictions_list: List[np.ndarray], stats_list: List[dict]):
@@ -1289,7 +1313,7 @@ def create_test_summary_plots(predictions_list: List[np.ndarray], stats_list: Li
     plt.tight_layout()
     plt.savefig('test_summary.png', dpi=300, bbox_inches='tight')
     plt.close()
-    print(f"\nTest summary plots saved to: test_summary.png")
+    logger.info("\nTest summary plots saved to: test_summary.png")
 
 
 def main():
@@ -1314,7 +1338,7 @@ def main():
 
     # Validate configuration
     if not config.validate():
-        print("Configuration validation failed. Please check your config.")
+        logger.info("Configuration validation failed. Please check your config.")
         return 1
 
     # Print configuration summary
@@ -1324,7 +1348,7 @@ def main():
     video_folder = args.video_folder or config.video.video_folder
 
     if not os.path.exists(video_folder):
-        print(f"Error: Video folder does not exist: {video_folder}")
+        logger.info(f"Error: Video folder does not exist: {video_folder}")
         return 1
 
     # Create output directories
@@ -1333,9 +1357,9 @@ def main():
 
     try:
         if args.mode in ['train', 'both']:
-            print("\n" + "=" * 80)
-            print("STARTING TRAINING")
-            print("=" * 80 + "\n")
+            logger.info("\n" + "=" * 80)
+            logger.info("STARTING TRAINING")
+            logger.info("=" * 80 + "\n")
 
             resume_path = args.model_path if args.resume else None
             model = train_lstm_model(
@@ -1344,12 +1368,12 @@ def main():
                 resume_path=resume_path
             )
 
-            print("\n✓ Training completed successfully!")
+            logger.info("\n✓ Training completed successfully!")
 
         if args.mode in ['test', 'both']:
-            print("\n" + "=" * 80)
-            print("STARTING TESTING")
-            print("=" * 80 + "\n")
+            logger.info("\n" + "=" * 80)
+            logger.info("STARTING TESTING")
+            logger.info("=" * 80 + "\n")
 
             model_path = args.model_path or config.testing.model_path
             test_lstm_model(
@@ -1358,12 +1382,12 @@ def main():
                 visualize=not args.no_visualize
             )
 
-            print("\n✓ Testing completed successfully!")
+            logger.info("\n✓ Testing completed successfully!")
 
         return 0
 
     except Exception as e:
-        print(f"\n✗ Error occurred: {e}")
+        logger.info(f"\n✗ Error occurred: {e}")
         import traceback
         traceback.print_exc()
         return 1

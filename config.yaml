@@ -1,0 +1,235 @@
+# Configuration for WebGazer Gaze Tracking System
+# All hyperparameters and settings in one place
+
+# Data paths
+data:
+  json_folder: "./heroku_data"  # Folder containing heroku_0.json, heroku_1.json
+  video_folder: "./stimuli"      # Folder containing video files
+  output_folder: "./output"     # Where to save models and results
+
+# Dataset split
+split:
+  test_ratio: 0.2              # 20% for testing
+  validation_ratio: 0.1        # 10% for validation (from training set)
+  random_seed: 42              # For reproducibility
+  min_gaze_points: 10          # Minimum gaze points per video to include
+
+# Video processing
+video:
+  target_width: 84             # Resize width for CNN
+  target_height: 84            # Resize height for CNN
+  frame_stack: 4               # Number of frames to stack (LSTM input)
+  grayscale: true              # Convert to grayscale
+  normalize: true              # Normalize to [0, 1]
+
+# Screen normalization (WebGazer coordinates)
+screen:
+  width: 1366                  # Default screen width
+  height: 657                  # Default screen height
+  coordinate_system: "pixels"  # Input format: "pixels" or "normalized"
+
+# CNN architecture
+cnn:
+  conv1_filters: 32
+  conv1_kernel: 8
+  conv1_stride: 4
+
+  conv2_filters: 64
+  conv2_kernel: 4
+  conv2_stride: 2
+
+  conv3_filters: 64
+  conv3_kernel: 3
+  conv3_stride: 1
+
+  conv4_filters: 128
+  conv4_kernel: 3
+  conv4_stride: 1
+
+  pooling: "adaptive"          # "adaptive" or "maxpool"
+  adaptive_pool_size: [1, 1]
+
+  activation: "relu"
+  dropout: 0.0
+
+# LSTM architecture
+lstm:
+  hidden_size: 128
+  num_layers: 2
+  dropout: 0.2                 # Between LSTM layers
+  bidirectional: false
+
+  # Additional temporal features
+  include_velocity: true       # Include gaze velocity
+  include_acceleration: false  # Include gaze acceleration
+
+# Policy network
+policy:
+  features_dim: 256            # Output dimension of feature extractor
+  hidden_layers: [512]         # Hidden layers for policy/value networks
+  shared_layers: [256, 128]    # Shared layers between policy and value
+  dropout: 0.3
+  activation: "relu"
+
+# PPO hyperparameters
+ppo:
+  learning_rate: 0.0003
+  n_steps: 2048                # Steps per environment per update
+  batch_size: 64               # Mini-batch size
+  n_epochs: 10                 # Optimization epochs per update
+  gamma: 0.99                  # Discount factor
+  gae_lambda: 0.95             # GAE parameter
+  clip_range: 0.2              # PPO clipping parameter
+  clip_range_vf: null          # Value function clipping (null = same as clip_range)
+  ent_coef: 0.01               # Entropy coefficient
+  vf_coef: 0.5                 # Value function coefficient
+  max_grad_norm: 0.5           # Gradient clipping
+  target_kl: null              # Early stopping based on KL divergence
+
+# Learning rate schedule
+lr_schedule:
+  type: "exponential"          # "constant", "linear", "exponential"
+  exponential_decay: 3.0       # Decay rate for exponential
+  min_lr_factor: 0.1           # Minimum LR = initial_lr * min_lr_factor
+  warmup_steps: 0              # Warmup steps (if > 0)
+
+# Reward function
+reward:
+  distance_scale: 2.0          # Scale factor for distance-based reward
+
+  # Distance thresholds (in normalized coordinates [0, 1])
+  excellent_threshold: 0.05
+  excellent_bonus: 1.0
+
+  good_threshold: 0.1
+  good_bonus: 0.5
+
+  fair_threshold: 0.2
+  fair_bonus: 0.2
+
+  # Edge penalties
+  edge_inner: 0.1              # Inner boundary
+  edge_outer: 0.9              # Outer boundary
+  edge_penalty_light: 0.3
+  edge_penalty_heavy: 0.5
+
+  # Movement rewards
+  movement_good_threshold: 0.02
+  movement_reward: 0.1
+
+  stagnation_threshold: 0.005
+  stagnation_penalty: 0.2
+
+  # Temporal consistency
+  consistency_reward: 0.15
+  jitter_penalty: 0.25
+
+  # Validity reward
+  validity_bonus: 0.1          # Bonus for valid gaze point
+
+# Training
+training:
+  total_timesteps: 100000      # Total training steps
+  save_frequency: 10000        # Save checkpoint every N steps
+  log_frequency: 1000          # Log metrics every N steps
+  eval_frequency: 5000         # Evaluate every N steps
+  eval_episodes: 5             # Number of episodes for evaluation
+
+  device: "auto"               # "auto", "cuda", "cpu"
+  num_workers: 1               # Parallel environments (set to 1 for simplicity)
+
+  # Early stopping
+  early_stopping: true
+  patience: 5                  # Stop if no improvement for N evaluations
+  min_improvement: 0.01        # Minimum improvement considered significant
+
+# Testing
+testing:
+  num_episodes: 10             # Episodes to test per video
+  deterministic: true          # Use deterministic policy
+  render: false                # Visualize during testing
+  save_predictions: true       # Save predicted gaze coordinates
+
+  # Metrics to compute
+  metrics:
+    - "mean_distance"
+    - "median_distance"
+    - "accuracy_at_threshold"  # Multiple thresholds
+    - "temporal_consistency"
+    - "edge_avoidance"
+
+# Logging and visualization
+logging:
+  use_tensorboard: true
+  tensorboard_log: "./tensorboard_logs"
+
+  # What to log
+  log_rewards: true
+  log_losses: true
+  log_policy_stats: true
+  log_gaze_heatmaps: true      # Log heatmaps every eval
+
+  # Verbosity
+  verbose: 1                   # 0: silent, 1: info, 2: debug
+
+# Checkpoints
+checkpoint:
+  save_best_only: false        # Save all checkpoints or only best
+  save_format: "zip"           # "zip" or "pkl"
+  keep_last_n: 5               # Keep only last N checkpoints
+
+# Visualization
+visualization:
+  create_plots: true
+  plot_frequency: 5000         # Create plots every N steps
+
+  # What to plot
+  plots:
+    - "reward_curve"
+    - "loss_curve"
+    - "learning_rate"
+    - "gaze_heatmap"
+    - "prediction_scatter"
+    - "temporal_trajectory"
+    - "distance_histogram"
+
+  plot_format: "png"           # "png", "pdf", "svg"
+  plot_dpi: 300
+
+# Data augmentation (for training robustness)
+augmentation:
+  enabled: false               # Enable data augmentation
+
+  # Video augmentations
+  brightness: 0.1              # Random brightness adjustment
+  contrast: 0.1                # Random contrast adjustment
+  noise: 0.01                  # Add random noise
+
+  # Temporal augmentations
+  temporal_jitter: 2           # Random frame skip (0 to N frames)
+
+# Memory management
+memory:
+  json_chunk_size: 100         # Load JSON in chunks of N entries
+  video_cache_size: 3          # Keep N videos in memory
+  clear_cache_frequency: 50    # Clear cache every N videos
+
+# Validation thresholds for data quality
+validation:
+  max_gaze_distance: 0.3       # Maximum allowed distance from previous point
+  min_sequence_length: 5       # Minimum gaze sequence length
+  remove_outliers: true        # Remove statistical outliers
+  outlier_std_threshold: 3.0   # Std deviations for outlier detection
+
+# Debugging
+debug:
+  enabled: false               # Enable debug mode
+  save_intermediate: false     # Save intermediate results
+  profile_performance: false   # Profile code performance
+  check_gradients: false       # Check for gradient issues
+
+# Reproducibility
+reproducibility:
+  set_seed: true
+  seed: 42
+  deterministic_ops: true      # Use deterministic operations (slower)
